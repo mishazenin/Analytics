@@ -42,6 +42,31 @@ type seccessfulJSONResponse struct{
 	ErrorMessage string `json:"errorMessage"`
 }
 
+func writeUnsuccessfulResponse( w http.ResponseWriter, ErrorMessage string){
+	response, _ := json.Marshal(&unseccessfulJSONResponse{
+		Success: false,
+		ErrorMessage: errMessage,
+	})
+	w.WriteHeader(http.StatusBadRequest)
+	w.Write(response)
+}
+
+
+//ответ об успехе в браузер 
+func writeSuccessfulResponse(w http.ResponseWriter, message string){
+	w.WriteHeader(http.StatusOk)
+	if message == ""{       						// если сообщение не передано то пишем...
+		w.Write([]byte(`{"success": true}`))
+	} else{
+		response, _ := json.Marshal(&successfulJSONResponse{
+			Success: true,
+			Message: message,
+		})
+		w.Write(response)
+	}
+}
+
+
 func Find(slice []string, val string)(int,bool){
 	for i, item:= range slice{
 		if item == val{
@@ -65,11 +90,18 @@ func main(){
 	log.Fatal(http.Serve(autocert.NewListener("analytics.istories.media"), handler))
 }
 
+// просмотр страницы
+func ProcessMaterialView(materialPK int){
+	_, err := edb.Incr(ctx, fmt.Sprintf("material_views_%d", materialPK)).Result()  // Incr - увеличивает счетчие Redis, materialPk
+	if err != nil{
+		panic(err)
+	}
+}
 
 func ProcessSuccessfulDonate(MaterialPK int, email string){
 	_,err := rdb.Append(ctx,
-		fmt.Sprintf("donaters_of_material_%d", materialPK),
-		fmt.Sprintf("%v", email),
+		fmt.Sprintf("donaters_of_material_%d", materialPK),   // ключ в конце айди пользователя оформ донат
+		fmt.Sprintf("%v:", email),								// мыло донатера
 	).Result()
 	if err != nil{
 		panic(err)
@@ -77,29 +109,29 @@ func ProcessSuccessfulDonate(MaterialPK int, email string){
 }
 
 
-func analyticsHandler(w http.ResponseWritter, r *http.Request){
-	w.Header().Set("Content-Type", "application/json; charset= utf-8")
+func analyticsHandler(w http.ResponseWriter, r *http.Request){
+	w.Header().Set("Content-Type", "application/json; charset= utf-8")   // уст контент тайп для ответа
 
-	decoder := json.NewDecoder(r.Body)
+	decoder := json.NewDecoder(r.Body) 										 // прост созд декодер 
 	var analyticsData analyticsData
-	err := decoder.Decode(&analyticsData)
+	err := decoder.Decode(&analyticsData)  									// тут декодим данные
 	if err != nil{
-		writeUnsuccessfulResponse(w, "Can't parse JSON: " + err.Error())
+		writeUnsuccessfulResponse(w, "Can't parse JSON: " + err.Error())  // сорян джейсон корявый пришел
 		return
 	}
-
-	if analyticsData.HitType == "page_view"{
+	// принятие аналитических данных и сохранение их в Redis
+	if analyticsData.HitType == "page_view"{ 						// чекаем тип сообщения, просмотр страницы
 		ProcessMaterialView(analyticsData.MaterialPK)
 		writeSuccessfulResponse(w, "")
-	} else if analyticsData.HitType == "event"{
-		if analyticsData.EventCategory != "donations"{
+	} else if analyticsData.HitType == "event"{						// событие ( успешная неуспешная отправка доната)
+		if analyticsData.EventCategory != "donations"{				// разбираем структуру
 			writeUnsuccessfulResponse(w,"Unknown event_category")
 			return
 		}
-		_, EventActionExists := Find(
+		_, eventActionExists := Find(								// ищем в структуре необхоимые ключи
 			[]string{"submit", "success", "failure"},
 			analyticsData.EventAction)
-		if !EventActionExists{
+		if !eventActionExists{
 			writeUnsuccessfulResponse(w,"Unknown event_action")
 			return
 		}
