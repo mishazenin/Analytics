@@ -5,20 +5,20 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"github.com/go-redis/redis/v8"		// работа с редисом
-	"github.com/rs/cors"			    // работа с корсами что бы с разными доменами все работало
-	"golang.org/x/crypto/acme/autocert"	// let's encrypt - налету генерить ssl сертификаты 
+	"github.com/go-redis/redis/v8"		
+	"github.com/rs/cors"			   
+	"golang.org/x/crypto/acme/autocert"	
 )
 
-//установка соединения с Redis
+
 var ctx = context.Background()
 var rdb = redis.NewClient(&redis.Options{
 	Addr:     "localhost:6379",
-	Password: "", 						//нет пароля
-	DB:       0, 						// дефолтная БД
+	Password: "", 						
+	DB:       0, 						
 })
 
-// структура приходит на вход сервера что бы мы могли ее парсить
+
 type analyticsData struct {
 	HitType string `json: "hit_type"`
 	PageType string `json: "page_type"`
@@ -30,13 +30,13 @@ type analyticsData struct {
 	Email string `json: "email"`
 }
 
-// структура для неуспешного ответа сервера 
+
 type unseccessfulJSONResponse struct{
 	Success bool `json: "success"`
 	ErrorMessage string `json:"errorMessage"`
 }
 
-//структура успешного ответа сервера  
+
 type seccessfulJSONResponse struct{
 	Success bool `json: "success"`
 	ErrorMessage string `json:"errorMessage"`
@@ -52,10 +52,10 @@ func writeUnsuccessfulResponse( w http.ResponseWriter, ErrorMessage string){
 }
 
 
-//ответ об успехе в браузер 
+
 func writeSuccessfulResponse(w http.ResponseWriter, message string){
 	w.WriteHeader(http.StatusOk)
-	if message == ""{       						// если сообщение не передано то пишем...
+	if message == ""{       						
 		w.Write([]byte(`{"success": true}`))
 	} else{
 		response, _ := json.Marshal(&successfulJSONResponse{
@@ -78,21 +78,21 @@ func Find(slice []string, val string)(int,bool){
 
 func main(){
 	mux := http.NewServeMux()
-	corsMiddleware := cors.New(cors.Options{    // работа с корсами
-		AllowedOrigins: []string{"http://istories.media"},	// домен с которого все должно работать
+	corsMiddleware := cors.New(cors.Options{    
+		AllowedOrigins: []string{"http://istories.media"},	
 	})
 
 	mux.HandleFunc("/send/", analyticsHandler)
 
-	//Insert the middleware
+	
 	handler := corsMiddleware.Hadler(mux)
-	//запускаем сервер и получаем ssl сертификат для домена и устанавливаем его (Let's encrypt механизмы)
+	
 	log.Fatal(http.Serve(autocert.NewListener("analytics.istories.media"), handler))
 }
 
-// просмотр страницы
+
 func ProcessMaterialView(materialPK int){
-	_, err := edb.Incr(ctx, fmt.Sprintf("material_views_%d", materialPK)).Result()  // Incr - увеличивает счетчие Redis, materialPk
+	_, err := edb.Incr(ctx, fmt.Sprintf("material_views_%d", materialPK)).Result()  
 	if err != nil{
 		panic(err)
 	}
@@ -100,8 +100,8 @@ func ProcessMaterialView(materialPK int){
 
 func ProcessSuccessfulDonate(MaterialPK int, email string){
 	_,err := rdb.Append(ctx,
-		fmt.Sprintf("donaters_of_material_%d", materialPK),   // ключ в конце айди пользователя оформ донат
-		fmt.Sprintf("%v:", email),								// мыло донатера
+		fmt.Sprintf("donaters_of_material_%d", materialPK),   
+		fmt.Sprintf("%v:", email),								
 	).Result()
 	if err != nil{
 		panic(err)
@@ -110,25 +110,25 @@ func ProcessSuccessfulDonate(MaterialPK int, email string){
 
 
 func analyticsHandler(w http.ResponseWriter, r *http.Request){
-	w.Header().Set("Content-Type", "application/json; charset= utf-8")   // уст контент тайп для ответа
+	w.Header().Set("Content-Type", "application/json; charset= utf-8")   
 
-	decoder := json.NewDecoder(r.Body) 										 // прост созд декодер 
+	decoder := json.NewDecoder(r.Body) 										 
 	var analyticsData analyticsData
-	err := decoder.Decode(&analyticsData)  									// тут декодим данные
+	err := decoder.Decode(&analyticsData)  									
 	if err != nil{
-		writeUnsuccessfulResponse(w, "Can't parse JSON: " + err.Error())  // сорян джейсон корявый пришел
+		writeUnsuccessfulResponse(w, "Can't parse JSON: " + err.Error())  
 		return
 	}
-	// принятие аналитических данных и сохранение их в Redis
-	if analyticsData.HitType == "page_view"{ 						// чекаем тип сообщения, просмотр страницы
+	
+	if analyticsData.HitType == "page_view"{ 						
 		ProcessMaterialView(analyticsData.MaterialPK)
 		writeSuccessfulResponse(w, "")
-	} else if analyticsData.HitType == "event"{						// событие ( успешная неуспешная отправка доната)
-		if analyticsData.EventCategory != "donations"{				// разбираем структуру
+	} else if analyticsData.HitType == "event"{						
+		if analyticsData.EventCategory != "donations"{				
 			writeUnsuccessfulResponse(w,"Unknown event_category")
 			return
 		}
-		_, eventActionExists := Find(								// ищем в структуре необхоимые ключи
+		_, eventActionExists := Find(								
 			[]string{"submit", "success", "failure"},
 			analyticsData.EventAction)
 		if !eventActionExists{
